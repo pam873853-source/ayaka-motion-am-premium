@@ -9,7 +9,7 @@ const ampAuth = new AlightMotionAuthBrowser();
 
 let app, db, auth, userId = null;
 let historyLogs = [];
-let totalVisitors = 1;
+let totalVisitors = parseInt(localStorage.getItem('ayaka_stable_visitors') || '5', 10);
 let reportsLogs = [];
 let realTimeChart = null;
 let activeTabName = 'dashboard';
@@ -349,8 +349,14 @@ function updateCounts() {
     const todayCount = historyLogs.filter(h => h.dateString === todayStr || h.date_string?.includes(todayStr)).length;
     if (actTodayEl) actTodayEl.textContent = todayCount;
 
+    // Stabilisasi angka pengunjung agar tidak turun drastis saat refresh
     const visitorsEl = document.getElementById('visitors-count');
-    if (visitorsEl) visitorsEl.textContent = Math.max(1, totalVisitors);
+    if (visitorsEl) {
+        const currentDisplayed = parseInt(visitorsEl.textContent) || 0;
+        const finalVisitors = Math.max(currentDisplayed > 0 ? currentDisplayed : 1, totalVisitors);
+        visitorsEl.textContent = finalVisitors;
+        localStorage.setItem('ayaka_stable_visitors', finalVisitors);
+    }
 
     updateChartData();
 }
@@ -391,7 +397,7 @@ async function initFirebase() {
 
             const visitorsCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'visitors');
             onSnapshot(visitorsCol, (snapshot) => {
-                totalVisitors = Math.max(1, snapshot.size);
+                totalVisitors = Math.max(totalVisitors, snapshot.size);
                 updateCounts();
             });
 
@@ -420,13 +426,11 @@ async function initFirebase() {
             });
         } else {
             userId = crypto.randomUUID();
-            totalVisitors = Math.floor(Math.random() * 5) + 3;
             updateCounts();
         }
     } catch (e) {
         console.error("Firebase init error:", e);
         if (!userId) userId = crypto.randomUUID();
-        totalVisitors = Math.floor(Math.random() * 4) + 2;
         updateCounts();
     }
 }
@@ -437,12 +441,11 @@ async function pingPresence() {
         await supabase.updatePresence(userId);
         const sbVisitors = await supabase.getActiveVisitors();
         if (sbVisitors !== null && sbVisitors > 0) {
-            totalVisitors = sbVisitors;
+            totalVisitors = Math.max(totalVisitors, sbVisitors);
+            localStorage.setItem('ayaka_stable_visitors', totalVisitors);
             updateCounts();
         }
-    } else if (!db) {
-        const variation = Math.random() > 0.5 ? 1 : -1;
-        totalVisitors = Math.max(1, totalVisitors + variation);
+    } else {
         updateCounts();
     }
 }
