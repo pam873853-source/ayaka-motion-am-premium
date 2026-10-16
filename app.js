@@ -1,22 +1,20 @@
 // app.js
 import { APP_ID, FIREBASE_CONFIG, SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { SupabaseClient, AlightMotionAuthBrowser } from './auth.js';
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 const supabase = new SupabaseClient(SUPABASE_URL, SUPABASE_KEY);
 const ampAuth = new AlightMotionAuthBrowser();
 
-let app, db, auth, userId = localStorage.getItem('ayaka_user_id');
+let userId = localStorage.getItem('ayaka_user_id');
 if (!userId) {
     userId = crypto.randomUUID();
     localStorage.setItem('ayaka_user_id', userId);
 }
 
-let historyLogs = [];
+// Ambil backup riwayat dari LocalStorage agar tidak balik 0 saat di-refresh
+let historyLogs = JSON.parse(localStorage.getItem('ayaka_history_logs') || '[]');
+let reportsLogs = JSON.parse(localStorage.getItem('ayaka_reports_logs') || '[]');
 let totalVisitors = 1;
-let reportsLogs = [];
 let realTimeChart = null;
 let activeTabName = 'dashboard';
 let verifiedEmailTemp = '';
@@ -50,7 +48,7 @@ function initActivationChart() {
 
     if (historyLogs && historyLogs.length > 0) {
         historyLogs.forEach(log => {
-            const logTime = log.timestamp || Date.now();
+            const logTime = log.timestamp ? Number(log.timestamp) : Date.now();
             const diffHours = Math.floor((now.getTime() - logTime) / 3600000);
             if (diffHours >= 0 && diffHours < 6) {
                 dataCounts[5 - diffHours]++;
@@ -106,7 +104,7 @@ function updateChartData() {
 
     if (historyLogs && historyLogs.length > 0) {
         historyLogs.forEach(log => {
-            const logTime = log.timestamp || Date.now();
+            const logTime = log.timestamp ? Number(log.timestamp) : Date.now();
             const diffHours = Math.floor((now.getTime() - logTime) / 3600000);
             if (diffHours >= 0 && diffHours < 6) {
                 dataCounts[5 - diffHours]++;
@@ -198,24 +196,28 @@ window.handleVerifyAndApply = async function() {
 
     if (res.success) {
         showToast("Akun Berhasil Diaktifkan ke Premium!");
-        const todayStr = new Date().toDateString();
+        const now = new Date();
         const logData = {
             user: email,
             type: pkg.includes('annual') ? '1 Tahun Premium' : '1 Bulan Premium',
-            timestamp: Date.now(),
-            dateString: todayStr,
+            timestamp: now.getTime(),
+            dateString: now.toDateString(),
+            date_string: now.toLocaleDateString('id-ID'),
             sender_id: userId
         };
 
-        // Kirim ke database Supabase
-        await supabase.addActivation(logData);
+        // Simpan lokal instan
+        historyLogs.unshift(logData);
+        localStorage.setItem('ayaka_history_logs', JSON.stringify(historyLogs));
+        updateCounts();
 
-        // Langsung tarik ulang data terbaru dari Supabase agar sinkron
-        await syncSupabaseActivations();
+        // Kirim ke Supabase
+        await supabase.addActivation(logData);
 
         document.getElementById('amp-email').value = '';
         document.getElementById('amp-magic-link').value = '';
         switchActivationStep(1);
+        syncSupabaseActivations();
     } else {
         showToast("Gagal: " + res.error);
     }
@@ -235,8 +237,8 @@ function renderHistory() {
     container.innerHTML = historyLogs.map(item => `
         <div class="neo-card p-3.5 flex items-center justify-between bg-white">
             <div>
-                <p class="text-xs font-black">${item.user}</p>
-                <p class="text-[10px] font-bold text-gray-500">${item.type}</p>
+                <p class="text-xs font-black">${item.user || 'User'}</p>
+                <p class="text-[10px] font-bold text-gray-500">${item.type || '1 Tahun Premium'}</p>
             </div>
             <span class="px-2.5 py-1 bg-emerald-400 border-2 border-black rounded-lg text-[10px] font-black">
                 AKTIF
@@ -248,6 +250,7 @@ function renderHistory() {
 window.clearHistoryFeed = function() {
     if (confirm("Hapus seluruh riwayat lokal?")) {
         historyLogs = [];
+        localStorage.removeItem('ayaka_history_logs');
         renderHistory();
         updateCounts();
         showToast("Riwayat dibersihkan.");
@@ -277,8 +280,11 @@ window.submitBugReport = async function() {
         sender_id: userId || 'Anonymous'
     };
 
+    reportsLogs.unshift(reportData);
+    localStorage.setItem('ayaka_reports_logs', JSON.stringify(reportsLogs));
+    renderReports();
+
     await supabase.addReport(reportData);
-    await syncSupabaseReports();
 
     if (btn) {
         btn.disabled = false;
@@ -286,7 +292,7 @@ window.submitBugReport = async function() {
     }
 
     document.getElementById('report-description').value = '';
-    showToast("Laporan/Saran berhasil disimpan ke Database!");
+    showToast("Laporan/Saran berhasil disimpan!");
 };
 
 function renderReports() {
@@ -315,8 +321,9 @@ function renderReports() {
 async function syncSupabaseReports() {
     if (supabase.isConfigured()) {
         const sbReports = await supabase.getReports();
-        if (sbReports) {
+        if (sbReports && sbReports.length > 0) {
             reportsLogs = sbReports;
+            localStorage.setItem('ayaka_reports_logs', JSON.stringify(reportsLogs));
             renderReports();
         }
     }
@@ -338,12 +345,15 @@ function updateCounts() {
     if (actEl) actEl.textContent = countActivations;
     if (actTotalEl) actTotalEl.textContent = countActivations;
 
-    const todayStr = new Date().toDateString();
+    // Filter tanggal hari ini secara fleksibel
+    const now = new Date();
+    const todayStr = now.toDateString();
+    const todayLocalStr = now.toLocaleDateString('id-ID');
+
     const todayCount = historyLogs.filter(h => {
         if (!h) return false;
-        if (h.dateString === todayStr) return true;
-        if (h.date_string && h.date_string.includes(todayStr)) return true;
-        if (h.timestamp && new Date(h.timestamp).toDateString() === todayStr) return true;
+        if (h.dateString === todayStr || h.date_string === todayLocalStr) return true;
+        if (h.timestamp && new Date(Number(h.timestamp)).toDateString() === todayStr) return true;
         return false;
     }).length;
 
@@ -360,9 +370,9 @@ function updateCounts() {
 async function syncSupabaseActivations() {
     if (supabase.isConfigured()) {
         const sbData = await supabase.getActivations();
-        if (sbData) {
+        if (sbData && sbData.length > 0) {
             historyLogs = sbData;
-            historyLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            localStorage.setItem('ayaka_history_logs', JSON.stringify(historyLogs));
             updateCounts();
             if (activeTabName === 'riwayat') {
                 renderHistory();
@@ -382,21 +392,20 @@ async function pingPresence() {
     }
 }
 
-// Langsung tarik data dari Supabase saat aplikasi dimuat pertama kali
-async function initAppData() {
-    await syncSupabaseActivations();
-    await syncSupabaseReports();
-    await pingPresence();
-}
+// Render langsung dari LocalStorage saat load agar UI tidak menunjukan angka 0
+updateCounts();
+renderReports();
 
-initAppData();
+// Kemudian jalankan sinkronisasi Supabase
+pingPresence();
+syncSupabaseActivations();
+syncSupabaseReports();
 
-// Interval berkala untuk menjaga sinkronisasi real-time
-setInterval(async () => {
-    await syncSupabaseActivations();
-    await syncSupabaseReports();
-    await pingPresence();
-}, 4000);
+setInterval(() => {
+    pingPresence();
+    syncSupabaseActivations();
+    syncSupabaseReports();
+}, 5000);
 
 // Live Widget (Waktu, Uptime, Baterai)
 let batteryInstance = null;
