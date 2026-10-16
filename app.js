@@ -207,29 +207,15 @@ window.handleVerifyAndApply = async function() {
             sender_id: userId
         };
 
-        // Simpan langsung ke Supabase
+        // Kirim ke database Supabase
         await supabase.addActivation(logData);
 
-        // Update lokal instan
-        historyLogs.unshift(logData);
-        updateCounts();
-        if (activeTabName === 'riwayat') {
-            renderHistory();
-            updateChartData();
-        }
-
-        if (db && userId) {
-            try {
-                await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'activations'), logData);
-            } catch (e) {
-                console.error("Firestore sync error:", e);
-            }
-        }
+        // Langsung tarik ulang data terbaru dari Supabase agar sinkron
+        await syncSupabaseActivations();
 
         document.getElementById('amp-email').value = '';
         document.getElementById('amp-magic-link').value = '';
         switchActivationStep(1);
-        syncSupabaseActivations();
     } else {
         showToast("Gagal: " + res.error);
     }
@@ -292,16 +278,7 @@ window.submitBugReport = async function() {
     };
 
     await supabase.addReport(reportData);
-    reportsLogs.unshift(reportData);
-    renderReports();
-
-    if (db && userId) {
-        try {
-            await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'reports'), reportData);
-        } catch (e) {
-            console.error("Firestore report sync error:", e);
-        }
-    }
+    await syncSupabaseReports();
 
     if (btn) {
         btn.disabled = false;
@@ -310,7 +287,6 @@ window.submitBugReport = async function() {
 
     document.getElementById('report-description').value = '';
     showToast("Laporan/Saran berhasil disimpan ke Database!");
-    syncSupabaseReports();
 };
 
 function renderReports() {
@@ -339,7 +315,7 @@ function renderReports() {
 async function syncSupabaseReports() {
     if (supabase.isConfigured()) {
         const sbReports = await supabase.getReports();
-        if (sbReports && sbReports.length > 0) {
+        if (sbReports) {
             reportsLogs = sbReports;
             renderReports();
         }
@@ -384,8 +360,9 @@ function updateCounts() {
 async function syncSupabaseActivations() {
     if (supabase.isConfigured()) {
         const sbData = await supabase.getActivations();
-        if (sbData && sbData.length > 0) {
+        if (sbData) {
             historyLogs = sbData;
+            historyLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             updateCounts();
             if (activeTabName === 'riwayat') {
                 renderHistory();
@@ -405,16 +382,20 @@ async function pingPresence() {
     }
 }
 
-// Inisialisasi awal
-pingPresence();
-setInterval(pingPresence, 6000);
+// Langsung tarik data dari Supabase saat aplikasi dimuat pertama kali
+async function initAppData() {
+    await syncSupabaseActivations();
+    await syncSupabaseReports();
+    await pingPresence();
+}
 
-syncSupabaseActivations();
-syncSupabaseReports();
+initAppData();
 
-setInterval(() => {
-    syncSupabaseActivations();
-    syncSupabaseReports();
+// Interval berkala untuk menjaga sinkronisasi real-time
+setInterval(async () => {
+    await syncSupabaseActivations();
+    await syncSupabaseReports();
+    await pingPresence();
 }, 4000);
 
 // Live Widget (Waktu, Uptime, Baterai)
