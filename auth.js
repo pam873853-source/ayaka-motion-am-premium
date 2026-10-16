@@ -63,7 +63,7 @@ export class SupabaseClient {
     async getReports() {
         if (!this.isConfigured()) return null;
         try {
-            const res = await fetch(`${this.url}/rest/v1/reports?select=*&order=created_at.desc`, {
+            const res = await fetch(`${this.url}/rest/v1/reports?select=*&order=timestamp.desc`, {
                 headers: await this.headers()
             });
             if (res.ok) {
@@ -97,6 +97,7 @@ export class SupabaseClient {
     async getActiveVisitors() {
         if (!this.isConfigured()) return null;
         try {
+            // Menghitung pengunjung aktif dalam 60 detik terakhir
             const cutoff = new Date(Date.now() - 60000).toISOString();
             const res = await fetch(`${this.url}/rest/v1/visitors?select=visitor_id&last_seen=gt.${cutoff}`, {
                 headers: await this.headers()
