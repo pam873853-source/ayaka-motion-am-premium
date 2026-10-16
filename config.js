@@ -4,8 +4,8 @@ export const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'ayaka-motion
 export const FIREBASE_CONFIG = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 
 // GANTI DENGAN KREDENSIAL SUPABASE ANDA
-export const SUPABASE_URL = "https://xxxx.supabase.co"; 
-export const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxxx"; 
+export const SUPABASE_URL = "https://mnmzvgqtbgiicousaqjy.supabase.co"; 
+export const SUPABASE_KEY = "sb_publishable_ELOkua7e7N46_44FoSSRYg_cq6XqtoQ"; 
 
 export const ALIGHT_MOTION_CONFIG = {
     ORDER_ID: "GPA",
