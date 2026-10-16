@@ -5,7 +5,7 @@ export const FIREBASE_CONFIG = JSON.parse(typeof __firebase_config !== 'undefine
 
 // Konfigurasi Supabase (Silakan ubah dengan kredensial Supabase Anda)
 export const SUPABASE_URL = "https://mnmzvgqtbgiicousaqjy.supabase.co"; 
-export const SUPABASE_KEY = "sb_publishable_LYFlvYeHMmjINWAaDhmOtw_wY-gaZ3b";
+export const SUPABASE_KEY = "sb_publishable_QggkMlaL034OWAkq4_GAVQ_K1Ltf2eW";
 
 // Konfigurasi Alight Motion Auth
 export const ALIGHT_MOTION_CONFIG = {
