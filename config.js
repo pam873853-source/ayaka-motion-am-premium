@@ -4,8 +4,8 @@ export const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'ayaka-motion
 export const FIREBASE_CONFIG = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 
 // Konfigurasi Supabase (Silakan ubah dengan kredensial Supabase Anda)
-export const SUPABASE_URL = "https://xxxx.supabase.co"; 
-export const SUPABASE_KEY = "sbp_xxxxxxxxxxxx";
+export const SUPABASE_URL = "https://mnmzvgqtbgiicousaqjy.supabase.co"; 
+export const SUPABASE_KEY = "sb_publishable_LYFlvYeHMmjINWAaDhmOtw_wY-gaZ3b";
 
 // Konfigurasi Alight Motion Auth
 export const ALIGHT_MOTION_CONFIG = {
