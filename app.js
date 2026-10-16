@@ -201,7 +201,16 @@ window.handleVerifyAndApply = async function() {
             sender_id: userId
         };
 
+        // Simpan langsung ke Supabase
         await supabase.addActivation(logData);
+
+        // Tambahkan ke riwayat lokal sementara agar UI langsung terupdate instan
+        historyLogs.unshift(logData);
+        updateCounts();
+        if (activeTabName === 'riwayat') {
+            renderHistory();
+            updateChartData();
+        }
 
         if (db && userId) {
             try {
@@ -277,6 +286,8 @@ window.submitBugReport = async function() {
     };
 
     await supabase.addReport(reportData);
+    reportsLogs.unshift(reportData);
+    renderReports();
 
     if (db && userId) {
         try {
@@ -322,7 +333,7 @@ function renderReports() {
 async function syncSupabaseReports() {
     if (supabase.isConfigured()) {
         const sbReports = await supabase.getReports();
-        if (sbReports) {
+        if (sbReports && sbReports.length > 0) {
             reportsLogs = sbReports;
             renderReports();
         }
@@ -346,10 +357,9 @@ function updateCounts() {
     if (actTotalEl) actTotalEl.textContent = countActivations;
 
     const todayStr = new Date().toDateString();
-    const todayCount = historyLogs.filter(h => h.dateString === todayStr || h.date_string?.includes(todayStr)).length;
+    const todayCount = historyLogs.filter(h => h.dateString === todayStr || h.date_string?.includes(todayStr) || new Date(h.timestamp || Date.now()).toDateString() === todayStr).length;
     if (actTodayEl) actTodayEl.textContent = todayCount;
 
-    // Stabilisasi angka pengunjung agar tidak turun drastis saat refresh
     const visitorsEl = document.getElementById('visitors-count');
     if (visitorsEl) {
         const currentDisplayed = parseInt(visitorsEl.textContent) || 0;
@@ -364,7 +374,7 @@ function updateCounts() {
 async function syncSupabaseActivations() {
     if (supabase.isConfigured()) {
         const sbData = await supabase.getActivations();
-        if (sbData) {
+        if (sbData && sbData.length > 0) {
             historyLogs = sbData;
             historyLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             updateCounts();
@@ -406,7 +416,7 @@ async function initFirebase() {
                 let firestoreLogs = [];
                 snapshot.forEach(docSnap => { firestoreLogs.push(docSnap.data()); });
                 
-                if (!supabase.isConfigured() || firestoreLogs.length > historyLogs.length) {
+                if (firestoreLogs.length >= historyLogs.length) {
                     historyLogs = firestoreLogs;
                     historyLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                     updateCounts();
@@ -418,7 +428,7 @@ async function initFirebase() {
             onSnapshot(reportsCol, (snapshot) => {
                 let firestoreReports = [];
                 snapshot.forEach(docSnap => { firestoreReports.push(docSnap.data()); });
-                if (!supabase.isConfigured() && firestoreReports.length > 0) {
+                if (firestoreReports.length > 0) {
                     reportsLogs = firestoreReports;
                     reportsLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                     renderReports();
