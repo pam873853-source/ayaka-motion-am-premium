@@ -1,3 +1,4 @@
+// auth.js
 import { ALIGHT_MOTION_CONFIG } from './config.js';
 
 export class SupabaseClient {
@@ -25,7 +26,13 @@ export class SupabaseClient {
             await fetch(`${this.url}/rest/v1/activations`, {
                 method: 'POST',
                 headers: await this.headers(),
-                body: JSON.stringify(logData)
+                body: JSON.stringify({
+                    user: logData.user,
+                    type: logData.type,
+                    timestamp: logData.timestamp,
+                    dateString: logData.dateString,
+                    sender_id: logData.sender_id
+                })
             });
         } catch (e) {
             console.error("Supabase addActivation error:", e);
@@ -38,9 +45,7 @@ export class SupabaseClient {
             const res = await fetch(`${this.url}/rest/v1/activations?select=*&order=timestamp.desc`, {
                 headers: await this.headers()
             });
-            if (res.ok) {
-                return await res.json();
-            }
+            if (res.ok) return await res.json();
         } catch (e) {
             console.error("Supabase getActivations error:", e);
         }
@@ -66,9 +71,7 @@ export class SupabaseClient {
             const res = await fetch(`${this.url}/rest/v1/reports?select=*&order=timestamp.desc`, {
                 headers: await this.headers()
             });
-            if (res.ok) {
-                return await res.json();
-            }
+            if (res.ok) return await res.json();
         } catch (e) {
             console.error("Supabase getReports error:", e);
         }
@@ -97,7 +100,6 @@ export class SupabaseClient {
     async getActiveVisitors() {
         if (!this.isConfigured()) return null;
         try {
-            // Menghitung pengunjung aktif dalam 60 detik terakhir
             const cutoff = new Date(Date.now() - 60000).toISOString();
             const res = await fetch(`${this.url}/rest/v1/visitors?select=visitor_id&last_seen=gt.${cutoff}`, {
                 headers: await this.headers()
