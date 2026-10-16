@@ -1,3 +1,4 @@
+// app.js
 import { APP_ID, FIREBASE_CONFIG, SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { SupabaseClient, AlightMotionAuthBrowser } from './auth.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -7,9 +8,14 @@ import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc } from "https
 const supabase = new SupabaseClient(SUPABASE_URL, SUPABASE_KEY);
 const ampAuth = new AlightMotionAuthBrowser();
 
-let app, db, auth, userId = null;
+let app, db, auth, userId = localStorage.getItem('ayaka_user_id');
+if (!userId) {
+    userId = crypto.randomUUID();
+    localStorage.setItem('ayaka_user_id', userId);
+}
+
 let historyLogs = [];
-let totalVisitors = parseInt(localStorage.getItem('ayaka_stable_visitors') || '5', 10);
+let totalVisitors = 1;
 let reportsLogs = [];
 let realTimeChart = null;
 let activeTabName = 'dashboard';
@@ -204,7 +210,7 @@ window.handleVerifyAndApply = async function() {
         // Simpan langsung ke Supabase
         await supabase.addActivation(logData);
 
-        // Tambahkan ke riwayat lokal sementara agar UI langsung terupdate instan
+        // Update lokal instan
         historyLogs.unshift(logData);
         updateCounts();
         if (activeTabName === 'riwayat') {
@@ -357,15 +363,19 @@ function updateCounts() {
     if (actTotalEl) actTotalEl.textContent = countActivations;
 
     const todayStr = new Date().toDateString();
-    const todayCount = historyLogs.filter(h => h.dateString === todayStr || h.date_string?.includes(todayStr) || new Date(h.timestamp || Date.now()).toDateString() === todayStr).length;
+    const todayCount = historyLogs.filter(h => {
+        if (!h) return false;
+        if (h.dateString === todayStr) return true;
+        if (h.date_string && h.date_string.includes(todayStr)) return true;
+        if (h.timestamp && new Date(h.timestamp).toDateString() === todayStr) return true;
+        return false;
+    }).length;
+
     if (actTodayEl) actTodayEl.textContent = todayCount;
 
     const visitorsEl = document.getElementById('visitors-count');
     if (visitorsEl) {
-        const currentDisplayed = parseInt(visitorsEl.textContent) || 0;
-        const finalVisitors = Math.max(currentDisplayed > 0 ? currentDisplayed : 1, totalVisitors);
-        visitorsEl.textContent = finalVisitors;
-        localStorage.setItem('ayaka_stable_visitors', finalVisitors);
+        visitorsEl.textContent = Math.max(1, totalVisitors);
     }
 
     updateChartData();
@@ -376,7 +386,6 @@ async function syncSupabaseActivations() {
         const sbData = await supabase.getActivations();
         if (sbData && sbData.length > 0) {
             historyLogs = sbData;
-            historyLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             updateCounts();
             if (activeTabName === 'riwayat') {
                 renderHistory();
@@ -385,84 +394,20 @@ async function syncSupabaseActivations() {
     }
 }
 
-async function initFirebase() {
-    try {
-        if (FIREBASE_CONFIG && Object.keys(FIREBASE_CONFIG).length > 0) {
-            app = initializeApp(FIREBASE_CONFIG);
-            db = getFirestore(app);
-            auth = getAuth(app);
-
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
-            }
-            userId = auth.currentUser?.uid || crypto.randomUUID();
-
-            const visitorRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'visitors', userId);
-            await setDoc(visitorRef, {
-                lastSeen: Date.now(),
-                userAgent: navigator.userAgent
-            }, { merge: true });
-
-            const visitorsCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'visitors');
-            onSnapshot(visitorsCol, (snapshot) => {
-                totalVisitors = Math.max(totalVisitors, snapshot.size);
-                updateCounts();
-            });
-
-            const activationsCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'activations');
-            onSnapshot(activationsCol, (snapshot) => {
-                let firestoreLogs = [];
-                snapshot.forEach(docSnap => { firestoreLogs.push(docSnap.data()); });
-                
-                if (firestoreLogs.length >= historyLogs.length) {
-                    historyLogs = firestoreLogs;
-                    historyLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                    updateCounts();
-                    if (activeTabName === 'riwayat') renderHistory();
-                }
-            });
-
-            const reportsCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'reports');
-            onSnapshot(reportsCol, (snapshot) => {
-                let firestoreReports = [];
-                snapshot.forEach(docSnap => { firestoreReports.push(docSnap.data()); });
-                if (firestoreReports.length > 0) {
-                    reportsLogs = firestoreReports;
-                    reportsLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                    renderReports();
-                }
-            });
-        } else {
-            userId = crypto.randomUUID();
-            updateCounts();
-        }
-    } catch (e) {
-        console.error("Firebase init error:", e);
-        if (!userId) userId = crypto.randomUUID();
-        updateCounts();
-    }
-}
-
 async function pingPresence() {
     if (supabase.isConfigured()) {
-        if (!userId) userId = crypto.randomUUID();
         await supabase.updatePresence(userId);
         const sbVisitors = await supabase.getActiveVisitors();
         if (sbVisitors !== null && sbVisitors > 0) {
-            totalVisitors = Math.max(totalVisitors, sbVisitors);
-            localStorage.setItem('ayaka_stable_visitors', totalVisitors);
+            totalVisitors = sbVisitors;
             updateCounts();
         }
-    } else {
-        updateCounts();
     }
 }
 
-initFirebase();
+// Inisialisasi awal
 pingPresence();
-setInterval(pingPresence, 8000);
+setInterval(pingPresence, 6000);
 
 syncSupabaseActivations();
 syncSupabaseReports();
@@ -470,8 +415,9 @@ syncSupabaseReports();
 setInterval(() => {
     syncSupabaseActivations();
     syncSupabaseReports();
-}, 5000);
+}, 4000);
 
+// Live Widget (Waktu, Uptime, Baterai)
 let batteryInstance = null;
 if ('getBattery' in navigator) {
     navigator.getBattery().then(batt => {
