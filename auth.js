@@ -8,7 +8,7 @@ export class SupabaseClient {
     }
 
     isConfigured() {
-        return this.url.includes("supabase.co") && this.key.length > 5;
+        return this.url && this.url.includes("supabase.co") && this.key && this.key.length > 5;
     }
 
     async headers() {
@@ -29,9 +29,9 @@ export class SupabaseClient {
                 body: JSON.stringify({
                     user: logData.user,
                     type: logData.type,
-                    timestamp: logData.timestamp,
-                    dateString: logData.dateString,
-                    sender_id: logData.sender_id
+                    timestamp: logData.timestamp || Date.now(),
+                    dateString: logData.dateString || new Date().toDateString(),
+                    sender_id: logData.sender_id || 'guest'
                 })
             });
         } catch (e) {
