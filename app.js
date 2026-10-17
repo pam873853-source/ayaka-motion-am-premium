@@ -1,19 +1,94 @@
-// Import fungsi Firebase Auth yang dibutuhkan via CDN
+// Import fungsi Firebase Auth via CDN
 import { sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-// Impor 'auth' dari file config.js kamu yang ter-encode
 import { auth } from "./config.js";
 
-// 🚨 PENGATURAN DOMAIN AGAR TIDAK ERROR UNAUTHORIZED_DOMAIN
+// 🚨 Action Code Settings untuk Magic Link
 const actionCodeSettings = {
     url: 'https://ayaka-motion-am-premium.vercel.app',
     handleCodeInApp: true
 };
 
 let activeTabName = 'dashboard';
-let historyLogs = [];
-let reportsLogs = [];
 let realTimeChart = null;
+
+// Waktu Mulai untuk Up Time
+let startTime = localStorage.getItem('ayaka_uptime_start');
+if (!startTime) {
+    startTime = Date.now();
+    localStorage.setItem('ayaka_uptime_start', startTime);
+} else {
+    startTime = parseInt(startTime, 10);
+}
+
+// =========================================================================
+// 🔋 FUNGSI BATERAI HP REALTIME
+// =========================================================================
+function initBatteryStatus() {
+    const batteryEl = document.querySelector('#view-dashboard div:nth-child(2) p') || document.getElementById('battery-level');
+    
+    if ('getBattery' in navigator) {
+        navigator.getBattery().then(battery => {
+            function updateBattery() {
+                const level = Math.round(battery.level * 100);
+                if (batteryEl) batteryEl.innerText = `${level}%`;
+            }
+            updateBattery();
+            battery.addEventListener('levelchange', updateBattery);
+        }).catch(() => {
+            if (batteryEl) batteryEl.innerText = '93%'; // Fallback
+        });
+    } else {
+        if (batteryEl) batteryEl.innerText = '93%';
+    }
+}
+
+// =========================================================================
+// ⏱️ FUNGSI UPTIME & LIVE CLOCK (BERJALAN REALTIME)
+// =========================================================================
+function updateLiveWidgets() {
+    const now = new Date();
+    
+    // 1. Update Waktu HP
+    const clockEl = document.getElementById('live-clock') || document.querySelector('#view-dashboard div:nth-child(1) p');
+    if (clockEl) {
+        clockEl.innerText = now.toTimeString().split(' ')[0];
+    }
+
+    // 2. Update Up Time (Menghitung durasi website dibuka)
+    const uptimeEl = document.getElementById('uptime-clock') || document.querySelector('#view-dashboard div:nth-child(3) p');
+    if (uptimeEl) {
+        const diffMs = Date.now() - startTime;
+        const totalSecs = Math.floor(diffMs / 1000);
+        const hours = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
+        const mins = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
+        const secs = String(totalSecs % 60).padStart(2, '0');
+        
+        uptimeEl.innerText = `${hours}:${mins}:${secs}`;
+    }
+}
+
+// =========================================================================
+// 📊 FUNGSI PENGUNJUNG ONLINE & TOTAL AKTIVASI (REALISTIS)
+// =========================================================================
+function initRealStats() {
+    const visitorsEl = document.getElementById('visitors-count') || document.querySelector('.grid-cols-2 div:nth-child(1) .text-3xl');
+    const activationsEl = document.getElementById('activations-count') || document.querySelector('.grid-cols-2 div:nth-child(2) .text-3xl');
+
+    // Mengambil atau membuat angka pengunjung awal yang stabil (misal 3 - 8 orang)
+    let onlineUsers = parseInt(localStorage.getItem('ayaka_online_users') || '5', 10);
+    let totalActs = parseInt(localStorage.getItem('ayaka_total_acts') || '12', 10);
+
+    if (visitorsEl) visitorsEl.innerText = onlineUsers;
+    if (activationsEl) activationsEl.innerText = totalActs;
+
+    // Naik/turun pengunjung online secara wajar setiap 5 detik
+    setInterval(() => {
+        const change = Math.floor(Math.random() * 3) - 1; // -1, 0, atau +1
+        onlineUsers = Math.max(1, onlineUsers + change);
+        localStorage.setItem('ayaka_online_users', onlineUsers);
+        if (visitorsEl) visitorsEl.innerText = onlineUsers;
+    }, 5000);
+}
 
 // =========================================================================
 // FUNGSI NAVIGASI TAB
@@ -26,29 +101,18 @@ window.setActiveTab = function(tabName) {
         const viewEl = document.getElementById(`view-${v}`);
         const navEl = document.getElementById(`nav-${v}`);
         if (viewEl) {
-            if (v === tabName) {
-                viewEl.classList.remove('hidden');
-            } else {
-                viewEl.classList.add('hidden');
-            }
+            if (v === tabName) viewEl.classList.remove('hidden');
+            else viewEl.classList.add('hidden');
         }
         if (navEl) {
-            if (v === tabName) {
-                navEl.className = "neo-btn-yellow py-2 text-[10px] flex flex-col items-center justify-center gap-0.5";
-            } else {
-                navEl.className = "neo-btn py-2 text-[10px] flex flex-col items-center justify-center gap-0.5";
-            }
+            if (v === tabName) navEl.className = "neo-btn-yellow py-2 text-[10px] flex flex-col items-center justify-center gap-0.5";
+            else navEl.className = "neo-btn py-2 text-[10px] flex flex-col items-center justify-center gap-0.5";
         }
     });
 
-    if (tabName === 'riwayat') {
-        initActivationChart();
-    }
+    if (tabName === 'riwayat') initActivationChart();
 };
 
-// =========================================================================
-// FUNGSI SWITCH LANGKAH AKTIVASI (Kirim Link vs Verifikasi)
-// =========================================================================
 window.switchActivationStep = function(stepNum) {
     const step1 = document.getElementById('neo-step-1');
     const step2 = document.getElementById('neo-step-2');
@@ -69,7 +133,7 @@ window.switchActivationStep = function(stepNum) {
 };
 
 // =========================================================================
-// FUNGSI UTAMA: KIRIM MAGIC LINK KE EMAIL
+// FUNGSI UTAMA: KIRIM MAGIC LINK
 // =========================================================================
 window.handleSendMagicLink = async function() {
     const emailInput = document.getElementById('amp-email');
@@ -87,16 +151,15 @@ window.handleSendMagicLink = async function() {
     }
 
     try {
-        // Mengirim Magic Link dengan menyertakan actionCodeSettings domain Vercel
         await sendSignInLinkToEmail(auth, email, actionCodeSettings);
-        
-        // Simpan email ke localStorage untuk verifikasi tahap berikutnya
         window.localStorage.setItem('emailForSignIn', email);
         
+        // Tambahkan statistik total aktivasi
+        let currentActs = parseInt(localStorage.getItem('ayaka_total_acts') || '12', 10) + 1;
+        localStorage.setItem('ayaka_total_acts', currentActs);
+
         showToast('Magic Link berhasil dikirim ke ' + email);
-        alert('Magic Link berhasil dikirim! Silakan cek Inbox atau folder Spam email Anda, lalu klik link tersebut.');
-        
-        // Pindah otomatis ke langkah 2 (Verifikasi)
+        alert('Magic Link berhasil dikirim! Silakan cek Inbox atau folder Spam email Anda.');
         window.switchActivationStep(2);
     } catch (error) {
         console.error("Gagal kirim link:", error);
@@ -109,22 +172,13 @@ window.handleSendMagicLink = async function() {
     }
 };
 
-// =========================================================================
-// FUNGSI VERIFIKASI TOKEN / MAGIC LINK
-// =========================================================================
 window.handleVerifyAndApply = async function() {
     const linkInput = document.getElementById('amp-magic-link');
     const linkValue = linkInput ? linkInput.value.trim() : '';
-    let email = window.localStorage.getItem('emailForSignIn');
+    let email = window.localStorage.setItem('emailForSignIn');
 
-    if (!email) {
-        email = prompt('Masukkan email yang tadi dikirimi Magic Link:');
-    }
-
-    if (!email) {
-        showToast('Email verifikasi tidak ditemukan!');
-        return;
-    }
+    if (!email) email = prompt('Masukkan email verifikasi:');
+    if (!email) return;
 
     try {
         let fullUrl = linkValue;
@@ -138,17 +192,13 @@ window.handleVerifyAndApply = async function() {
             alert('Sukses! Akun Alight Motion Anda berhasil diaktifkan selama 365 Hari.');
             window.localStorage.removeItem('emailForSignIn');
         } else {
-            alert('Format Magic Link atau oobCode tidak valid.');
+            alert('Format Magic Link tidak valid.');
         }
     } catch (error) {
-        console.error("Error verifikasi:", error);
         alert('Verifikasi Gagal: ' + (error.message || JSON.stringify(error)));
     }
 };
 
-// =========================================================================
-// FUNGSI TOAST NOTIFIKASI
-// =========================================================================
 function showToast(message) {
     const toast = document.getElementById('toast-notif');
     const msgEl = document.getElementById('toast-message');
@@ -163,48 +213,10 @@ function showToast(message) {
     }
 }
 
-// =========================================================================
-// INISIALISASI WIDGET & JAM REALTIME
-// =========================================================================
-function initLiveWidgets() {
-    setInterval(() => {
-        const now = new Date();
-        const clockEl = document.getElementById('live-clock');
-        const dateEl = document.getElementById('current-date-time');
-        
-        if (clockEl) clockEl.innerText = now.toTimeString().split(' ')[0];
-        if (dateEl) {
-            const d = String(now.getDate()).padStart(2, '0');
-            const m = String(now.getMonth() + 1).padStart(2, '0');
-            const y = now.getFullYear();
-            dateEl.innerText = `${d}/${m}/${y} ${now.toTimeString().split(' ')[0].substring(0,5)}`;
-        }
-    }, 1000);
-
-    const visitorsEl = document.getElementById('visitors-count');
-    const activationsEl = document.getElementById('activations-count');
-    const actTotalEl = document.getElementById('act-total-count');
-    const actTodayEl = document.getElementById('act-today-count');
-
-    let randomVis = Math.floor(Math.random() * 15) + 42;
-    let randomAct = 1258;
-
-    if (visitorsEl) visitorsEl.innerText = randomVis;
-    if (activationsEl) activationsEl.innerText = randomAct;
-    if (actTotalEl) actTotalEl.innerText = randomAct;
-    if (actTodayEl) actTodayEl.innerText = '48';
-}
-
-// =========================================================================
-// GRAFIK CHART.JS REALTIME AKTIVASI
-// =========================================================================
 function initActivationChart() {
     const canvas = document.getElementById('activation-chart');
     if (!canvas) return;
-
-    if (realTimeChart) {
-        realTimeChart.destroy();
-    }
+    if (realTimeChart) realTimeChart.destroy();
 
     const ctx = canvas.getContext('2d');
     realTimeChart = new Chart(ctx, {
@@ -213,7 +225,7 @@ function initActivationChart() {
             labels: ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00'],
             datasets: [{
                 label: 'Aktivasi Berhasil',
-                data: [5, 12, 19, 8, 25, 42],
+                data: [1, 2, 4, 3, 5, 8],
                 borderColor: '#000000',
                 backgroundColor: '#facc15',
                 borderWidth: 3,
@@ -233,7 +245,9 @@ function initActivationChart() {
     });
 }
 
-// Jalankan fungsi widget saat dokumen selesai dimuat
+// Jalankan widget & listener saat halaman dimuat
 document.addEventListener('DOMContentLoaded', () => {
-    initLiveWidgets();
+    initBatteryStatus();
+    initRealStats();
+    setInterval(updateLiveWidgets, 1000);
 });
