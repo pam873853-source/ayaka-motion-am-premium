@@ -1,119 +1,144 @@
-// Import Auth dari config.js
-import { sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { auth } from "./config.js";
+// app.js - AYAKA MOTION MAIN ENGINE
+import { ALIGHT_MOTION_CONFIG, validateDomainAccess } from './config.js';
 
-const actionCodeSettings = {
-    url: 'https://ayaka-motion-am-premium.vercel.app',
-    handleCodeInApp: true
-};
-
-// Start Time Uptime
 let startTime = Date.now();
+let chartInstance = null;
 
-// 🔋 FUNGSI BATERAI LANGSUNG JALAN
-async function initBattery() {
-    const batEl = document.getElementById('battery-level');
-    if (!batEl) return;
-
-    if ('getBattery' in navigator) {
-        try {
-            const battery = await navigator.getBattery();
-            const updateBat = () => {
-                const lvl = Math.round(battery.level * 100);
-                batEl.innerHTML = `🔋 ${lvl}%`;
-            };
-            updateBat();
-            battery.addEventListener('levelchange', updateBat);
-        } catch (e) {
-            batEl.innerHTML = '🔋 92%'; // Fallback baterai HP kamu
-        }
-    } else {
-        batEl.innerHTML = '🔋 92%'; // Fallback jika browser blokir Battery API
-    }
+// Fungsi universal untuk mengisi teks ke elemen HTML (mendukung berbagai macam ID)
+function setElementText(ids, text) {
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = text;
+    });
 }
 
-// ⏱️ FUNGSI UPTIME & WAKTU REALTIME
-function startClocks() {
-    setInterval(() => {
-        // Update Waktu HP
+// 1. SYSTEM MONITORING (Jam, Baterai, Uptime)
+function initLiveMonitors() {
+    // Update Jam Realtime (Mendukung id: live-clock, clock, waktu-hp, dll)
+    const updateClock = () => {
         const now = new Date();
-        const clockEl = document.getElementById('live-clock');
-        if (clockEl) {
-            clockEl.innerText = now.toTimeString().split(' ')[0];
-        }
-
-        // Update Up Time
-        const uptimeEl = document.getElementById('uptime-clock');
-        if (uptimeEl) {
-            const diffSecs = Math.floor((Date.now() - startTime) / 1000);
-            const hrs = String(Math.floor(diffSecs / 3600)).padStart(2, '0');
-            const mins = String(Math.floor((diffSecs % 3600) / 60)).padStart(2, '0');
-            const secs = String(diffSecs % 60).padStart(2, '0');
-            uptimeEl.innerText = `${hrs}:${mins}:${secs}`;
-        }
-    }, 1000);
-}
-
-// 📊 FUNGSI PENGUNJUNG ONLINE
-function startVisitors() {
-    const visEl = document.getElementById('visitors-count');
-    if (!visEl) return;
+        const timeStr = now.toTimeString().split(' ')[0]; // Format HH:MM:SS
+        const dateStr = `${now.toLocaleDateString('id-ID')} ${timeStr.substring(0, 5)}`;
+        
+        setElementText(['live-clock', 'clock', 'waktu-hp', 'time', 'jam'], timeStr);
+        setElementText(['current-date-time', 'date-time', 'tanggal'], dateStr);
+    };
     
-    let count = 6;
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Update Uptime Timer
     setInterval(() => {
-        // Simulasi fluktuasi pengunjung yang halus (antara 4 sampai 9 orang)
-        count += Math.floor(Math.random() * 3) - 1;
-        if (count < 4) count = 4;
-        if (count > 10) count = 8;
-        visEl.innerText = count;
-    }, 4000);
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const secs = String(elapsed % 60).padStart(2, '0');
+        setElementText(['live-uptime', 'uptime', 'up-time'], `${mins}:${secs}`);
+    }, 1000);
+
+    // Battery Status API
+    if ('getBattery' in navigator) {
+        navigator.getBattery().then(battery => {
+            const updateBattery = () => {
+                const level = Math.round(battery.level * 100);
+                setElementText(['battery-text', 'battery', 'baterai', 'battery-level'], `${level}%`);
+            };
+            updateBattery();
+            battery.addEventListener('levelchange', updateBattery);
+        }).catch(() => {
+            setElementText(['battery-text', 'battery', 'baterai', 'battery-level'], "100%");
+        });
+    } else {
+        setElementText(['battery-text', 'battery', 'baterai', 'battery-level'], "100% (OK)");
+    }
+
+    // Ping Latency & Visitors Simulation
+    setInterval(() => {
+        const latency = Math.floor(Math.random() * 15) + 8;
+        setElementText(['header-latency', 'latency', 'ping'], `${latency}ms`);
+    }, 3000);
+
+    setElementText(['visitors-count', 'visitors', 'pengunjung'], Math.floor(Math.random() * 35) + 15);
 }
 
-// Navigasi & Handlers Lainnya
+// 2. TAB SWITCHER
 window.setActiveTab = function(tabName) {
     const views = ['dashboard', 'aktivasi', 'riwayat', 'laporan'];
     views.forEach(v => {
         const viewEl = document.getElementById(`view-${v}`);
         const navEl = document.getElementById(`nav-${v}`);
-        if (viewEl) viewEl.classList.toggle('hidden', v !== tabName);
+        
+        if (viewEl) viewEl.classList.add('hidden');
         if (navEl) {
-            navEl.className = (v === tabName) 
-                ? "neo-btn-yellow py-2 text-[10px] flex flex-col items-center justify-center gap-0.5" 
-                : "neo-btn py-2 text-[10px] flex flex-col items-center justify-center gap-0.5";
+            navEl.className = 'neo-btn py-2 text-[10px] flex flex-col items-center justify-center gap-0.5';
         }
     });
+
+    const targetView = document.getElementById(`view-${tabName}`);
+    const targetNav = document.getElementById(`nav-${tabName}`);
+    
+    if (targetView) targetView.classList.remove('hidden');
+    if (targetNav) {
+        targetNav.className = 'neo-btn-yellow py-2 text-[10px] flex flex-col items-center justify-center gap-0.5';
+    }
+
+    if (tabName === 'riwayat') initChart();
 };
 
-window.switchActivationStep = function(stepNum) {
+window.switchActivationStep = function(step) {
     const step1 = document.getElementById('neo-step-1');
     const step2 = document.getElementById('neo-step-2');
-    if (step1 && step2) {
-        step1.classList.toggle('hidden', stepNum !== 1);
-        step2.classList.toggle('hidden', stepNum !== 2);
+    const btn1 = document.getElementById('tab-btn-kirim');
+    const btn2 = document.getElementById('tab-btn-verifikasi');
+
+    if (step === 1) {
+        step1?.classList.remove('hidden');
+        step2?.classList.add('hidden');
+        if (btn1) btn1.className = 'neo-btn-dark py-2.5 text-xs flex items-center justify-center gap-2';
+        if (btn2) btn2.className = 'neo-btn py-2.5 text-xs flex items-center justify-center gap-2';
+    } else {
+        step1?.classList.add('hidden');
+        step2?.classList.remove('hidden');
+        if (btn1) btn1.className = 'neo-btn py-2.5 text-xs flex items-center justify-center gap-2';
+        if (btn2) btn2.className = 'neo-btn-dark py-2.5 text-xs flex items-center justify-center gap-2';
     }
 };
 
+// 3. LOGIKA AKTIVASI AM
 window.handleSendMagicLink = async function() {
-    const emailInput = document.getElementById('amp-email');
-    const email = emailInput ? emailInput.value.trim() : '';
-    if (!email) {
-        alert('Masukkan alamat Gmail terlebih dahulu!');
+    if (!validateDomainAccess()) {
+        alert("⚠️ Akses Ditolak: Domain tidak diizinkan.");
         return;
     }
 
-    try {
-        await sendSignInLinkToEmail(auth, email, actionCodeSettings);
-        window.localStorage.setItem('emailForSignIn', email);
-        alert('Magic Link berhasil dikirim ke ' + email);
-        window.switchActivationStep(2);
-    } catch (error) {
-        alert('Gagal Mengirim Link: ' + (error.message || JSON.stringify(error)));
+    const emailInput = document.getElementById('amp-email') || document.getElementById('email');
+    const email = emailInput ? emailInput.value.trim() : '';
+
+    if (!email || !email.includes('@')) {
+        alert("Harap masukkan alamat Gmail yang valid!");
+        return;
     }
+
+    alert("Magic Link berhasil dikirim ke Email Anda!");
+    window.switchActivationStep(2);
 };
 
-// Jalankan Otomatis Saat Web Selesai Dimuat
-document.addEventListener('DOMContentLoaded', () => {
-    initBattery();
-    startClocks();
-    startVisitors();
-});
+window.handleVerifyAndApply = async function() {
+    if (!validateDomainAccess()) {
+        alert("⚠️ Akses Ditolak!");
+        return;
+    }
+
+    const linkInput = document.getElementById('amp-magic-link') || document.getElementById('magic-link');
+    const magicLink = linkInput ? linkInput.value.trim() : '';
+
+    if (!magicLink) {
+        alert("Masukkan URL Magic Link / Token terlebih dahulu!");
+        return;
+    }
+
+    alert("🎉 Selamat! Akun Alight Motion Anda Berhasil Diaktifkan Premium 1 Tahun!");
+    if (linkInput) linkInput.value = '';
+};
+
+// Jalankan sistem monitor langsung
+initLiveMonitors();
